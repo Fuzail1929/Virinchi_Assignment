@@ -369,3 +369,148 @@ body > main {
     min-height: 44px;
   }
 }
+
+/* Request readiness tracker */
+#campus-stores .readiness-overview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--desk);
+}
+#campus-stores .readiness-overview span,
+#campus-stores .readiness-summary span {
+  color: var(--quiet);
+  font-size: 12px;
+}
+#campus-stores .request-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#campus-stores .readiness-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+#campus-stores .check-title {
+  margin: 14px 0 5px !important;
+}
+#campus-stores .readiness-list {
+  border-top: 1px solid var(--line);
+}
+#campus-stores .readiness-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+#campus-stores .readiness-item > span:first-child {
+  font-weight: 600;
+}
+#campus-stores .readiness-item small {
+  grid-column: 1 / -1;
+}
+#campus-stores .readiness-state {
+  font-size: 12px;
+  font-weight: 650;
+}
+#campus-stores .readiness-state.available,
+#campus-stores .readiness-state.issued {
+  color: var(--oktxt);
+}
+#campus-stores .readiness-state.unavailable {
+  color: var(--mark);
+}
+#campus-stores .request-note {
+  margin-top: 13px !important;
+}
+@container (max-width: 480px) {
+  #campus-stores .request-actions {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+}
+
+
+/* Safety, quality and audit features */
+#campus-stores .safety-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 14px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--mark);
+  border-radius: 8px;
+  background: var(--desk);
+}
+#campus-stores .safety-callout span,
+#campus-stores .safety-card small,
+#campus-stores .safety-note,
+#campus-stores .activity-entry small {
+  color: var(--quiet);
+  font-size: 12px;
+}
+#campus-stores .safety-card {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+#campus-stores .safety-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+#campus-stores .safety-card-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+#campus-stores .safety-note {
+  margin: 8px 0 !important;
+}
+#campus-stores .safety-card form {
+  margin-top: 10px;
+}
+#campus-stores .activity-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+#campus-stores .activity-entry p {
+  margin: 0 !important;
+  color: var(--quiet);
+  font-size: 13px;
+}
+
+
+/* Safer return and request-aware issue workflows */
+#campus-stores .return-form {
+  margin: 8px 0 14px 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--desk);
+}
+#campus-stores .return-form .buttons {
+  margin-top: 10px;
+}
+#campus-stores select:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+#campus-stores .safety-card form input,
+#campus-stores .return-form input {
+  width: 100%;
+}

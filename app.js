@@ -88,6 +88,8 @@
     ["Inventory", "package"],
     ["Loan register", "book-open"],
     ["Desk book", "messages-square"],
+    ["Safety checks", "clipboard-list"],
+    ["Activity log", "messages-square"],
   ];
   const original = () => ({
     version: 1,
@@ -106,7 +108,12 @@
       },
     ],
     notes: [],
+    // Sample units begin with a recorded baseline clearance. Staff can
+    // quarantine a unit until cleaning, function and accessory checks pass.
+    safety: Object.fromEntries(assets.map((a) => [a.id, { status: "Cleared", note: "Baseline sample clearance" }])),
+    activity: [{ time: "Shift start", action: "Sample shift opened", detail: "Baseline inventory loaded" }],
     editing: false,
+    returning: 0,
     onlyOpen: true,
     notice: "Sample shift · All records are fictional.",
   });
@@ -158,40 +165,66 @@
     "</div></div>";
   const badge = (t, good = false) =>
     '<span class="tag' + (good ? " good" : "") + '">' + esc(t) + "</span>";
+  // A request is ready when every approved equipment type is either already
+  // issued against that request or has at least one serviceable unit on shelf.
+  function readiness(r) {
+    const items = r.items.map((type) => {
+      const issued = s.loans.find(
+        (l) => l.req === r.id && !l.back && getAsset(l.asset)?.type === type,
+      );
+      const available = assets.filter(
+        (a) => a.type === type && !a.repair && !out(a.id) &&
+          (s.safety?.[a.id]?.status || "Cleared") === "Cleared",
+      );
+      return {
+        type,
+        state: issued ? "Issued" : available.length ? "Available" : "Unavailable",
+        detail: issued
+          ? "Assigned on loan " + "L-" + issued.num
+          : available.length
+            ? available.length + " unit" + (available.length === 1 ? "" : "s") + " on shelf"
+            : "No serviceable unit on shelf",
+      };
+    });
+    return {
+      items,
+      ready: items.every((item) => item.state !== "Unavailable"),
+      issued: items.filter((item) => item.state === "Issued").length,
+      unavailable: items.filter((item) => item.state === "Unavailable").length,
+    };
+  }
   function requestPage() {
     let html = head(
       "Approved requests",
-      "Student Activities Office · 3 approved forms",
+      "Live equipment readiness · updates after every issue or return",
     );
     if (s.selected) {
       const r = getReq(s.selected);
-      html +=
-        btn("Back to list", "close") +
-        '<div class="record"><small>' +
-        r.id +
-        " · Approved</small><h3>" +
-        r.event +
-        "</h3><p>" +
-        r.club +
-        " · Filed by " +
-        r.owner +
-        "</p><p><b>Return by</b> " +
-        r.due +
-        "</p><p><b>Approved equipment</b></p><ul>" +
-        r.items.map((x) => "<li>" + x + "</li>").join("") +
-        "</ul><p>" +
-        r.note +
-        "</p></div>";
-    } else
-      html += requests
-        .map((r) =>
-          row(
-            r.event,
-            r.id + " · " + r.club,
-            btn("View form", "request", r.id),
-          ),
-        )
-        .join("");
+      const check = readiness(r);
+      html += btn("Back to list", "close");
+      html += '<div class="record"><small>' + r.id + " · Approved</small><h3>" +
+        esc(r.event) + "</h3><p>" + esc(r.club) + " · Filed by " + esc(r.owner) +
+        "</p><p><b>Return by</b> " + esc(r.due) + '</p><div class="readiness-summary">' +
+        badge(check.ready ? "Ready to fulfil" : "Blocked · stock unavailable", check.ready) +
+        "<span>" + check.issued + " of " + r.items.length + " item types already issued</span></div>" +
+        '<h3 class="check-title">Equipment readiness</h3><div class="readiness-list">' +
+        check.items.map((item) => '<div class="readiness-item"><span>' + esc(item.type) +
+          '</span><span class="readiness-state ' + item.state.toLowerCase() + '">' + esc(item.state) +
+          '</span><small>' + esc(item.detail) + '</small></div>').join("") +
+        '</div><p class="request-note">' + esc(r.note) + "</p></div>";
+    } else {
+      html += '<div class="readiness-overview"><b>Fulfilment overview</b><span>' +
+        requests.filter((r) => readiness(r).ready).length + ' / ' + requests.length +
+        ' requests currently ready</span></div>';
+      html += requests.map((r) => {
+        const check = readiness(r);
+        return row(
+          r.event,
+          r.id + " · " + r.club + " · " + (check.ready ? "All equipment accounted for" : check.unavailable + " item type unavailable"),
+          '<div class="request-actions">' + badge(check.ready ? "Ready" : "Blocked", check.ready) + btn("View details", "request", r.id) + '</div>',
+        );
+      }).join("");
+    }
     return html;
   }
   function inventory() {
@@ -202,15 +235,18 @@
     html +=
       '<div class="buttons"><label>Show <select data-filter>' +
       opts(
-        ["All items", "On shelf", "On loan", "In repair"].map((f) => [f, f]),
+        ["All items", "On shelf", "On loan", "In repair", "Needs inspection", "Quarantined"].map((f) => [f, f]),
       ) +
       "</select></label></div>";
     for (const a of assets) {
+      const safetyStatus = s.safety?.[a.id]?.status || "Cleared";
       const status = a.repair
         ? "In repair"
-        : out(a.id)
-          ? "On loan"
-          : "On shelf";
+        : safetyStatus !== "Cleared"
+          ? safetyStatus
+          : out(a.id)
+            ? "On loan"
+            : "On shelf";
       if (s.filter !== "All items" && s.filter !== status) continue;
       html += row(
         a.id + " · " + a.type,
@@ -229,7 +265,6 @@
         : btn("New issue slip", "new", "", "primary"),
     );
     if (s.editing) {
-      const available = assets.filter((a) => !a.repair && !out(a.id));
       const select = (label, key, options) =>
         "<label><span>" +
         label +
@@ -245,12 +280,8 @@
           "Approved request",
           "req",
           requests.map((r) => [r.id, r.id + " · " + r.club]),
-        ) +
-        select(
-          "Unit leaving the desk",
-          "asset",
-          available.map((a) => [a.id, a.id + " · " + a.type]),
-        ) +
+        ).replace('<select name="req"', '<select name="req" data-issue-request') +
+        '<label><span>Unit leaving the desk</span><select name="asset" data-issue-asset required disabled><option value="">Choose an approved request first…</option></select></label>' +
         select(
           "Collected by",
           "who",
@@ -284,14 +315,61 @@
       .slice()
       .reverse();
     if (!shown.length) html += "<p>No outstanding slips.</p>";
-    for (const l of shown)
+    for (const l of shown) {
       html += row(
         "L-" + l.num + " · " + l.asset,
-        l.req + " · " + l.who + " · Due " + l.due,
+        l.req + " · " + l.who + " · Due " + l.due +
+          (l.back && l.returnCondition ? " · " + l.returnCondition : ""),
         l.back
           ? badge("Returned")
           : btn("Record return", "return", String(l.num)),
       );
+      if (!l.back && s.returning === l.num) {
+        html += '<form class="return-form" data-return="' + l.num + '"><div class="form">' +
+          '<label><span>Return condition</span><select name="condition" required>' +
+          '<option value="">Select condition…</option>' +
+          '<option value="Passed inspection">Passed inspection · clean and functional</option>' +
+          '<option value="Needs cleaning">Needs cleaning / inspection</option>' +
+          '<option value="Damaged">Damaged · quarantine unit</option></select></label>' +
+          '<label><span>Return notes</span><input name="note" maxlength="180" placeholder="Condition, missing accessories, cleaning…" required></label>' +
+          '</div><div class="buttons"><button type="submit" class="primary">Complete return</button>' +
+          btn("Cancel", "cancel-return") + '</div></form>';
+      }
+    }
+    return html;
+  }
+  function safetyChecks() {
+    let html = head(
+      "Safety & quality checks",
+      "Shared-equipment controls · cleaning, function test and accessory completeness",
+    );
+    html += '<div class="safety-callout"><strong>Issue control</strong><span>Units marked “Quarantined” or “Needs inspection” cannot be issued until cleared.</span></div>';
+    for (const a of assets) {
+      const check = s.safety?.[a.id] || { status: "Needs inspection", note: "No inspection recorded" };
+      html += '<article class="safety-card"><div class="safety-card-head"><div><strong>' +
+        esc(a.id + " · " + a.type) + '</strong><small>' + esc(a.model + " · " + a.bin) +
+        '</small></div>' + badge(check.status, check.status === "Cleared") +
+        '</div><p class="safety-note">' + esc(check.note || "No inspection note") +
+        '</p><form data-safety="' + esc(a.id) + '"><div class="form">' +
+        '<label><span>Inspection outcome</span><select name="status" required>' +
+        [["Cleared", "Cleared · ready for issue"], ["Needs inspection", "Needs inspection"], ["Quarantined", "Quarantined · do not issue"]].map(([v, label]) => '<option value="' + esc(v) + '"' + (check.status === v ? " selected" : "") + '>' + esc(label) + '</option>').join("") +
+        '</select></label><label><span>Inspection note</span><input name="note" maxlength="180" placeholder="Cleaning, function test, missing accessory…" required></label></div>' +
+        '<button type="submit">Save inspection</button></form></article>';
+    }
+    return html;
+  }
+  function activityLog() {
+    let html = head(
+      "Activity log",
+      "Audit trail of operational changes in this browser session",
+    );
+    const entries = (s.activity || []).slice().reverse();
+    if (!entries.length) return html + "<p>No activity recorded yet.</p>";
+    for (const entry of entries) {
+      html += '<article class="activity-entry"><small>' + esc(entry.time) +
+        '</small><strong>' + esc(entry.action) + '</strong><p>' +
+        esc(entry.detail) + '</p></article>';
+    }
     return html;
   }
   function deskbook() {
@@ -338,6 +416,8 @@
     Inventory: inventory,
     "Loan register": register,
     "Desk book": deskbook,
+    "Safety checks": safetyChecks,
+    "Activity log": activityLog,
   };
   function paint() {
     const phase = shifts[s.phase];
@@ -365,6 +445,11 @@
     if (q("[data-filter]")) q("[data-filter]").value = s.filter;
     q("[data-status]").textContent = s.notice;
   }
+  function logActivity(action, detail) {
+    if (!Array.isArray(s.activity)) s.activity = [];
+    s.activity.push({ time: shifts[s.phase]?.time || "Current shift", action, detail });
+    if (s.activity.length > 100) s.activity = s.activity.slice(-100);
+  }
   function commit(msg) {
     if (msg) s.notice = msg;
     paint();
@@ -384,12 +469,16 @@
         s = original();
         break;
       case "advance":
-        if (s.phase < 2) s.phase++;
+        if (s.phase < 2) {
+          s.phase++;
+          logActivity("Shift advanced", shifts[s.phase].title);
+        }
         s.notice = "Shift time updated.";
         break;
       case "tab":
         s.tab = v;
         s.editing = false;
+        s.returning = 0;
         break;
       case "close":
         s.selected = "";
@@ -409,10 +498,12 @@
       case "return": {
         const l = s.loans.find((l) => l.num === Number(v));
         if (!l || l.back) return;
-        l.back = true;
-        s.notice = l.asset + " returned to stock. Slip L-" + l.num + " closed.";
+        s.returning = l.num;
         break;
       }
+      case "cancel-return":
+        s.returning = 0;
+        break;
     }
     commit();
   });
@@ -420,16 +511,65 @@
     if (e.target.matches("[data-filter]")) {
       s.filter = e.target.value;
       commit();
+      return;
+    }
+    if (e.target.matches("[data-issue-request]")) {
+      const request = getReq(e.target.value);
+      const assetSelect = q("[data-issue-asset]");
+      if (!assetSelect) return;
+      const eligible = request ? assets.filter((a) =>
+        request.items.includes(a.type) &&
+        !a.repair &&
+        !out(a.id) &&
+        (s.safety?.[a.id]?.status || "Cleared") === "Cleared" &&
+        !s.loans.some((l) => l.req === request.id && !l.back && getAsset(l.asset)?.type === a.type)
+      ) : [];
+      assetSelect.innerHTML = '<option value="">Select an available requested unit…</option>' +
+        eligible.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.id + " · " + a.type + " · " + a.model) + '</option>').join("");
+      assetSelect.disabled = eligible.length === 0;
+      if (request && !eligible.length) {
+        q("[data-status]").textContent = "No eligible units remain for this request. Check inventory, outstanding loans and safety status.";
+      }
     }
   });
   root.addEventListener("submit", (e) => {
     e.preventDefault();
     const f = e.target;
     const form = new FormData(f);
+    if (f.matches("[data-return]")) {
+      const num = Number(f.dataset.return);
+      const loan = s.loans.find((l) => l.num === num && !l.back);
+      const condition = String(form.get("condition"));
+      const note = String(form.get("note")).trim();
+      if (!loan || !["Passed inspection", "Needs cleaning", "Damaged"].includes(condition) || !note) return;
+      loan.back = true;
+      loan.returnCondition = condition;
+      loan.returnNote = note;
+      const safetyStatus = condition === "Passed inspection" ? "Cleared" : condition === "Damaged" ? "Quarantined" : "Needs inspection";
+      s.safety[loan.asset] = {
+        status: safetyStatus,
+        note: "Return check: " + condition + " — " + note
+      };
+      s.returning = 0;
+      logActivity("Equipment returned", loan.asset + " · slip L-" + loan.num + " · " + condition + " · " + note);
+      commit("Return recorded for " + loan.asset + ". Safety status: " + safetyStatus + ".");
+      return;
+    }
+    if (f.matches("[data-safety]")) {
+      const assetId = f.dataset.safety;
+      const status = String(form.get("status"));
+      const note = String(form.get("note")).trim();
+      if (!getAsset(assetId) || !["Cleared", "Needs inspection", "Quarantined"].includes(status) || !note) return;
+      s.safety[assetId] = { status, note };
+      logActivity("Safety status updated", assetId + " · " + status + " · " + note);
+      commit(assetId + " inspection saved: " + status + ".");
+      return;
+    }
     if (f.matches("[data-note]")) {
       const text = String(form.get("note")).trim();
       if (!text) return;
       s.notes.push({ phase: s.phase, text });
+      logActivity("Handover note added", text);
       commit("Handover note saved.");
       return;
     }
@@ -439,8 +579,13 @@
     );
     const unit = getAsset(asset),
       r = getReq(req);
-    if (!r || !unit || unit.repair || out(asset) || !people.includes(who))
+    if (!r || !unit || unit.repair || out(asset) || !people.includes(who) ||
+        !["Fri 8 pm", "Sat 9 am", "Sat 10 am", "Sat noon"].includes(due))
       return;
+    if ((s.safety?.[asset]?.status || "Cleared") !== "Cleared") {
+      q("[data-status]").textContent = asset + " is not safety-cleared. Complete its inspection before issuing.";
+      return;
+    }
     if (!r.items.includes(unit.type)) {
       q("[data-status]").textContent =
         "This equipment type is outside the approved request. Choose an approved unit.";
@@ -457,6 +602,7 @@
     }
     const num = Math.max(...s.loans.map((l) => l.num)) + 1;
     s.loans.push({ num, req, asset, who, due, back: false });
+    logActivity("Equipment issued", asset + " · " + req + " · " + who + " · due " + due + " · slip L-" + num);
     s.editing = false;
     commit("Issued " + asset + " to " + who + " on slip L-" + num + ".");
   });
@@ -484,7 +630,11 @@
       ...d,
       loans: d.loans.map((l) => ({ ...l })),
       notes: d.notes.map((n) => ({ ...n })),
+      safety: d.safety && typeof d.safety === "object" ? { ...original().safety, ...d.safety } : original().safety,
+      activity: Array.isArray(d.activity) ? d.activity.slice(-100) : original().activity,
     };
+    if (!s.safety) s.safety = original().safety;
+    if (!s.activity) s.activity = original().activity;
     paint();
   }
   paint();
